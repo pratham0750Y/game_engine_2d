@@ -1,3 +1,6 @@
+from operator import pos
+
+from matplotlib.pylab import size
 import pygame as py
 from functools import lru_cache
 
@@ -11,6 +14,7 @@ class World_parameters:
 
     entities=[]
     blocks=[]
+    text=[]
 
     screen=None
     halfscreen=None
@@ -255,7 +259,7 @@ class Image:
         self.raw_image[self.current].append(img)
         self.tempx+=img.size[0]
 
-    #@lru_cache(maxsize=128)
+    @lru_cache(maxsize=128)
     @staticmethod
     def load(path,alpha=True,size=None,fit_screen=False,flip=False):
     
@@ -342,6 +346,57 @@ class Animation:
     def __getitem__(self,key):
         img=self.image[World_parameters.directions[key[0] if key[0] else None]][key[1]]
         return img[World_parameters.frame%len(img)]
+
+class text:
+    
+    def __init__(self,text,pos,size=20,colour=(255,255,255),font="Arial",antialias=True):
+        World_parameters.text.append(self)
+        
+        self.text=text
+        self.pos=pos
+        self.font=_font(size,font)
+        self.colour=colour
+        self.antialias=antialias
+        self.size=size
+        self.active=True
+
+    def update(self,text=None,pos=None,size=None,colour=None,font=None,antialias=None):
+        if text is not None:
+            self.text=text
+        if pos is not None:
+            self.pos=pos
+        if size is not None or font is not None:
+            self.font=_font(size if size is not None else self.size,font if font is not None else self.font.get_name())
+        if colour is not None:
+            self.colour=colour
+        if antialias is not None:
+            self.antialias=antialias
+
+    @lru_cache(maxsize=128)
+    def _render_cache(self,text,antialias,colour):
+        return self.font.render(text,antialias,colour)
+
+    def disable(self):
+        if self.active:
+            World_parameters.text.remove(self)
+            self.active=False
+
+    def enable(self):
+        if not self.active:
+            World_parameters.text.append(self)
+            self.active=True
+
+    def draw(self):
+        World_parameters.screen.blit(self._render_cache(self.text,self.antialias,self.colour),self.pos)
+
+def blitprint(text,pos,size=20,colour=(255,255,255),font="Arial",antialias=True):
+        font=_font(size,font)
+        World_parameters.screen.blit(font.render(text,antialias,colour),pos)
+
+@lru_cache(maxsize=128)
+def _font(size=20,font="Arial"):
+    font=py.font.SysFont(font,size)
+    return font
 
 
 def set_background(image,speed=1,infinitex=False,infinitey=False,start=(0,0)):
@@ -489,9 +544,8 @@ def drawall():
             for entity in entities[x][y]:
                 World_parameters.screen.blit(entity.animation[entity.facing,entity.status],(entity.rec.x+offsetx,entity.rec.y+offsety))
 
-
-
-
+    for text in World_parameters.text:
+        text.draw()
 
 
 
