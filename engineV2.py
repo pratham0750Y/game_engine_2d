@@ -6,8 +6,8 @@ class _default:
 
 class World_parameters:
 
-    directions={'left':0,'right':1,'top':2,'bottom':3}
-    reverse_directions={0:1,1:0,2:3,3:2}
+    directions={'left':0,'right':1,'top':2,'bottom':3,None:0}
+    reverse_directions={"right":0,"left":1,"top":2,"bottom":3,None:0}
 
     entities=[]
     blocks=[]
@@ -37,6 +37,8 @@ class World_parameters:
     clock=None
     time=0
     frame=0
+
+    count=0
 
     colors = {
     "red": (255, 0, 0),
@@ -74,7 +76,7 @@ def init(screensize,world_size,freezex=False,freezey=False,fps=60,gravity=None,c
     for x in range(0,world_size[0]):
         entities.append([])
         blocks.append([])
-        for y in range(0,world_size[1]):
+        for _ in range(0,world_size[1]):
             entities[x].append([])
             blocks[x].append([])
 
@@ -93,50 +95,27 @@ def init(screensize,world_size,freezex=False,freezey=False,fps=60,gravity=None,c
     World_parameters.background_size=py.Vector2(World_parameters.screen_size)
     return World_parameters.screen
 
-#@lru_cache(maxsize=128)
-def image_load(path,alpha=True,size=None,fit_screen=False):
-    
-    if '.' not in path:
-        if type(path)!=tuple:
-            path=World_parameters.colors[path]
-        img=py.surface.Surface(size)
-        img.fill(path)
-    else:
-        if alpha:
-            img=py.image.load(path).convert_alpha()
-        else:
-            img=py.image.load(path).convert()
-   
-    if fit_screen:
-        img=py.transform.smoothscale(img,World_parameters.screen_size)
-    elif size is not None:
-        img=py.transform.smoothscale(img,size)
-    else:
-        img=py.transform.smoothscale(img,World_parameters.screen_size)
-
-    return img
-
 def camera_update():
     if World_parameters.camera_follow is not None:
         World_parameters.camera_pos=py.Vector2(World_parameters.camera_follow.rec.x if not World_parameters.freezex else 0, World_parameters.camera_follow.rec.y if not World_parameters.freezey else 0)+World_parameters.camera_offset
         World_parameters.background_relative_pos=py.Vector2(World_parameters.camera_follow.rec.x if not World_parameters.freezex else 0, World_parameters.camera_follow.rec.y if not World_parameters.freezey else 0)*World_parameters.background_speed
 
 class Entity:
-    def __init__(self,pos,size,status=None,direction='right',image=None,colour=(255,0,0),velocity=(0,0),acceleration=(0,0),gravity=World_parameters.gravity,max_velocity=None,tag=None,collision=True):
+    def __init__(self,pos,size,status=None,facing='right',image=None,colour=(255,0,0),velocity=(0,0),acceleration=(0,0),gravity=World_parameters.gravity,max_velocity=None,tag=None,collision=True,maxdirection=4):
         World_parameters.entities[pos[0]//World_parameters.chunk_size][pos[1]//World_parameters.chunk_size].append(self)
 
+        self.id=World_parameters.count
+        World_parameters.count+=1
+        
         self.rec=py.Rect(pos[0],pos[1],size[0],size[1])
         self.prevpos=py.Vector2(pos)
-        self.image=[{},{},{},{}]
-        if type(colour)==str:
-            colour=World_parameters.colors[colour]
         
-        self.load_image(image if image is not None else colour,status,direction)
+        self.animation=Animation(image if image else colour,size,facing,status,reverse=True,maxdirection=maxdirection)
+        self.facing=facing
+        self.status=status
 
         self.vel=py.Vector2(velocity)
         self.acc=py.Vector2((0,gravity) if gravity is not None else acceleration)
-
-        self.current_status=status
 
         self.l=py.Rect(self.rec.x-1,self.rec.y,1,self.rec.height)
         self.r=py.Rect(self.rec.x+self.rec.width,self.rec.y,1,self.rec.height)
@@ -147,7 +126,6 @@ class Entity:
         self.tag=tag
         self.collision=collision
         self.load_radius=py.Vector2(size[0]//World_parameters.chunk_size+1,size[1]//World_parameters.chunk_size+1)
-        self.facing_direction=direction
 
     @property
     def left(self):
@@ -185,18 +163,6 @@ class Entity:
     def late_update(self):
         pass
 
-    def load_image(self,path,status,direction):
-        direction=World_parameters.directions[direction]
-        rev_direction=World_parameters.reverse_directions[direction]
-
-        if status in self.image[direction]:
-            self.image[direction][status].append(image_load(path,size=self.rec.size))
-            self.image[rev_direction][status].append(py.transform.flip(image_load(path,size=self.rec.size),True if direction==1 or direction==0 else False,True if direction==2 or direction==3 else False))
-
-        else:
-            self.image[direction][status]=[image_load(path,size=self.rec.size)]
-            self.image[rev_direction][status]=[py.transform.flip(image_load(path,size=self.rec.size),True if direction==1 or direction==0 else False,True if direction==2 or direction==3 else False)]
-
     def moveTo(self,x,y):
             chunk_size=World_parameters.chunk_size
             if self.rec.x//chunk_size!=x//chunk_size or self.rec.y//chunk_size!=y//chunk_size:    
@@ -214,19 +180,24 @@ class Entity:
 
 
 class Block:
-    def __init__(self,pos,size,status=None,direction='right',image=None,colour=(0,255,0),tag=None,current_status=None):
-
+    def __init__(self,pos,size,status=None,image=None,colour=(0,255,0),tag=None,maxdirection=1):
         World_parameters.blocks[pos[0]//World_parameters.chunk_size][pos[1]//World_parameters.chunk_size].append(self)
 
+        self.id=World_parameters.count
+        World_parameters.count+=1
+
         self.rec=py.Rect(pos[0],pos[1],size[0],size[1])
-        self.image={}
-        self.load_image(image if image is not None else colour,status,direction)
-        self.current_status=current_status
+        self.animation=Animation(image if image else colour,size,None,status,reverse=False,maxdirection=maxdirection)
+
+        self.status=status
+        self.facing=None
         
         self.l=py.Rect(self.rec.x-1,self.rec.y,1,self.rec.height)
         self.r=py.Rect(self.rec.x+self.rec.width,self.rec.y,1,self.rec.height)
         self.t=py.Rect(self.rec.x,self.rec.y-1,self.rec.width,1)
         self.b=py.Rect(self.rec.x,self.rec.y+self.rec.height,self.rec.width,1)
+
+        self.tag=tag
 
     @property
     def left(self):
@@ -251,14 +222,6 @@ class Block:
         self.b.x = self.rec.x
         self.b.y = self.rec.bottom
         return self.b
-
-    def load_image(self,path,status,direction):
-        direction=World_parameters.directions[direction]
-
-        if status in self.image:
-            self.image[status].append(image_load(path,size=self.rec.size))
-        else:
-            self.image[status]=[image_load(path,size=self.rec.size)]
             
     def update(self):
         pass
@@ -288,11 +251,41 @@ class Image:
         self.inserted=[]
 
     def add(self,image,size=World_parameters.screen_size):
-        img=image_load(image,alpha=False,size=size)
+        img=Image.load(image,alpha=False,size=size)
         self.raw_image[self.current].append(img)
         self.tempx+=img.size[0]
 
-    load=image_load  
+    #@lru_cache(maxsize=128)
+    @staticmethod
+    def load(path,alpha=True,size=None,fit_screen=False,flip=False):
+    
+        if '.' not in path:
+            if type(path)!=tuple:
+                path=World_parameters.colors[path]
+            img=py.surface.Surface(size)
+            img.fill(path)
+        else:
+            if alpha:
+                img=py.image.load(path).convert_alpha()
+            else:
+                img=py.image.load(path).convert()
+    
+        if fit_screen:
+            img=py.transform.smoothscale(img,World_parameters.screen_size)
+        elif size is not None:
+            img=py.transform.smoothscale(img,size)
+        else:
+            img=py.transform.smoothscale(img,World_parameters.screen_size)
+
+        if flip:
+            if flip=='h':
+                img=py.transform.flip(img,True,False)
+            elif flip=='v':
+                img=py.transform.flip(img,False,True)
+            elif flip=='hv':
+                img=py.transform.flip(img,True,True)
+
+        return img
 
     def next(self):
         self.current+=1
@@ -306,7 +299,7 @@ class Image:
         self.tempx+=x
 
     def insert(self,image,pos,size=World_parameters.screen_size):
-        self.inserted.append((image_load(image,alpha=False,size=size),pos))
+        self.inserted.append((Image.load(image,alpha=False,size=size),pos))
         
     def compile(self):
         self.image_size.x=max(self.tempx,self.image_size.x)
@@ -324,7 +317,33 @@ class Image:
         self.image=image
         del self.raw_image,self.current,self.image_size,self.inserted
         return image
-            
+
+class Animation:
+    def __init__(self,image,size,direction,status,reverse=True,maxdirection=4):
+        self.image=[{} for _ in range(maxdirection)]
+        if status not in self.image[World_parameters.directions[direction]]:
+            self.image[World_parameters.directions[direction]][status]=[]
+        self.image[World_parameters.directions[direction]][status].append(Image.load(image,size=size))
+        if reverse:
+            if status not in self.image[World_parameters.reverse_directions[direction]]:
+                self.image[World_parameters.reverse_directions[direction]][status]=[]
+            self.image[World_parameters.reverse_directions[direction]][status].append(Image.load(image,size=size,flip='h' if direction=='right' or direction=='left' else 'v'))
+
+    def add(self,image,size,direction,status,reverse=True):
+        for image,size,direction,status in zip(image,size,direction,status):
+            if status not in self.image[World_parameters.directions[direction]]: 
+                self.image[World_parameters.directions[direction]][status]=[]
+            self.image[World_parameters.directions[direction]][status].append(Image.load(image,size=size))
+            if reverse:
+                if status not in self.image[World_parameters.reverse_directions[direction]]:
+                    self.image[World_parameters.reverse_directions[direction]][status]=[]
+                self.image[World_parameters.reverse_directions[direction]][status].append(Image.load(image,size=size,flip='h' if direction=='right' or direction=='left' else 'v'))
+
+    def __getitem__(self,key):
+        img=self.image[World_parameters.directions[key[0] if key[0] else None]][key[1]]
+        return img[World_parameters.frame%len(img)]
+
+
 def set_background(image,speed=1,infinitex=False,infinitey=False,start=(0,0)):
 
     World_parameters.background=image
@@ -344,13 +363,16 @@ def objupdate():
     current_chunk=World_parameters.current_chunk
     startx=int(max(0,current_chunk.x-1-World_parameters.camera_offset.x//World_parameters.chunk_size))
     starty=int(max(0,current_chunk.y-1-World_parameters.camera_offset.y//World_parameters.chunk_size))
-    endx=int(min(len(World_parameters.blocks),current_chunk.x+World_parameters.screen_size.x+1))
-    endy=int(min(len(World_parameters.blocks[0]),current_chunk.y+World_parameters.screen_size.y+1))
+    endx=int(min(len(World_parameters.blocks),current_chunk.x+World_parameters.screen_size.x//World_parameters.chunk_size+1))
+    endy=int(min(len(World_parameters.blocks[0]),current_chunk.y+World_parameters.screen_size.y//World_parameters.chunk_size+1))
     World_parameters.time+=1
+
+ 
 
     if World_parameters.time%15==0:
         World_parameters.frame+=1
 
+    #entity update
     for x in range(startx,endx):
         for y in range(starty,endy):
             for entity in entities[x][y]:
@@ -369,14 +391,18 @@ def objupdate():
             for block in blocks[x][y]:
                 block.update()
 
+    #collision detection
     for x in range(startx,endx):
         for y in range(starty,endy):
             for entity in entities[x][y]:
                 for r in range(-1,int(entity.load_radius.x)+1):
                     for c in range(-1,int(entity.load_radius.y)+1):
                         for entity2 in entities[x+r][y+c]:
-                                if entity!=entity2 and entity.rec.colliderect(entity2.rec):
-                                    entity.entity_entity_collision(entity2)
+                                if entity.id<entity2.id:
+                                    if entity!=entity2 and entity.rec.colliderect(entity2.rec):
+                                        entity.entity_entity_collision(entity2)
+                                        entity2.entity_entity_collision(entity)
+
                         if entity.collision:
                             for block in blocks[x+r][y+c]:
                                 if entity.rec.colliderect(block.left) and entity.vel.x>0:
@@ -400,6 +426,7 @@ def objupdate():
                                         entity.vel.y=0
                                     entity.entity_block_collision(block,'bottom')
 
+    #late update
     for x in range(startx,endx):
         for y in range(starty,endy):
             for entity in entities[x][y]:
@@ -417,54 +444,40 @@ def drawall():
     current_chunk=World_parameters.current_chunk
     startx=int(max(0,current_chunk.x-1-World_parameters.camera_offset.x//World_parameters.chunk_size))
     starty=int(max(0,current_chunk.y-1-World_parameters.camera_offset.y//World_parameters.chunk_size))
-    endx=int(min(len(World_parameters.blocks),current_chunk.x+World_parameters.screen_size.x+1))
-    endy=int(min(len(World_parameters.blocks[0]),current_chunk.y+World_parameters.screen_size.y+1))
-
-    frame=World_parameters.frame
+    endx=int(min(len(World_parameters.blocks),current_chunk.x+World_parameters.screen_size.x//World_parameters.chunk_size+1))
+    endy=int(min(len(World_parameters.blocks[0]),current_chunk.y+World_parameters.screen_size.y//World_parameters.chunk_size+1))
 
     offsetx=-World_parameters.camera_offset.x-World_parameters.camera_pos.x
-    offsety=-World_parameters.camera_pos.y+World_parameters.camera_offset.y
+    offsety=World_parameters.camera_offset.y-World_parameters.camera_pos.y
     background_size=World_parameters.background_size
     relative_pos=World_parameters.background_relative_pos
 
-    if not (World_parameters.infinitex or World_parameters.infinitey):
-        World_parameters.screen.blit(World_parameters.background,(0,0),(World_parameters.background_relative_pos.x,World_parameters.background_relative_pos.y,World_parameters.screen_size.x,World_parameters.screen_size.y))
-    elif World_parameters.infinitex and not World_parameters.infinitey:
+    World_parameters.screen.fill((0,0,0))
+
+    World_parameters.screen.blit(World_parameters.background,(0,0),(World_parameters.background_relative_pos.x,World_parameters.background_relative_pos.y,World_parameters.screen_size.x,World_parameters.screen_size.y))
+    
+    if World_parameters.infinitex:
         diff=0
         World_parameters.background_relative_pos.x=World_parameters.background_relative_pos.x%background_size.x
 
         if relative_pos.x>=background_size[0]-World_parameters.screen_size[0]:
             diff=background_size[0]-relative_pos[0]
-            World_parameters.screen.blit(World_parameters.background,(0,0),(relative_pos.x,relative_pos.y,diff,World_parameters.screen_size.y))
             World_parameters.screen.blit(World_parameters.background,(diff,0),(0,World_parameters.background_relative_pos.y,World_parameters.screen_size.x-diff,World_parameters.screen_size.y))
-        else:
-            World_parameters.screen.blit(World_parameters.background,(0,0),(relative_pos.x,relative_pos.y,World_parameters.screen_size.x,World_parameters.screen_size.y))
-    elif not World_parameters.infinitex and World_parameters.infinitey:
+    
+    if World_parameters.infinitey:
         diff=0
         World_parameters.background_relative_pos.y=World_parameters.background_relative_pos.y%background_size[1]
    
         if relative_pos.y>=background_size[1]-World_parameters.screen_size[1]:
             diff=background_size[1]-relative_pos[1]
-            World_parameters.screen.blit(World_parameters.background,(0,0),(relative_pos.x,relative_pos.y,World_parameters.screen_size.x,diff))
             World_parameters.screen.blit(World_parameters.background,(0,diff),(World_parameters.background_relative_pos.x,0,World_parameters.screen_size.x,World_parameters.screen_size.y-diff))
-        else:
-            World_parameters.screen.blit(World_parameters.background,(0,0),(relative_pos.x,relative_pos.y,World_parameters.screen_size.x,World_parameters.screen_size.y))     
-
-    else:
+       
+    if World_parameters.infinitex and World_parameters.infinitey:
         diffx=0
         diffy=0
 
         World_parameters.background_relative_pos.x=World_parameters.background_relative_pos.x%background_size.x
-        World_parameters.background_relative_pos.y=World_parameters.background_relative_pos.y%background_size.y
-        World_parameters.screen.blit(World_parameters.background,(0,0),(relative_pos.x,relative_pos.y,World_parameters.screen_size.x,World_parameters.screen_size.y))     
-       
-        if relative_pos.x>=background_size[0]-World_parameters.screen_size[0]:
-            diffx=background_size[0]-relative_pos[0]
-            World_parameters.screen.blit(World_parameters.background,(diffx,0),(0,World_parameters.background_relative_pos.y,World_parameters.screen_size.x-diffx,World_parameters.screen_size.y))
-    
-        if relative_pos.y>=background_size[1]-World_parameters.screen_size[1]:
-            diffy=background_size[1]-relative_pos[1]
-            World_parameters.screen.blit(World_parameters.background,(0,diffy),(World_parameters.background_relative_pos.x,0,World_parameters.screen_size.x,World_parameters.screen_size.y-diffy))
+        World_parameters.background_relative_pos.y=World_parameters.background_relative_pos.y%background_size.y   
        
         if relative_pos.x>=background_size[0]-World_parameters.screen_size[0] and relative_pos.y>=background_size[1]-World_parameters.screen_size[1]:
             World_parameters.screen.blit(World_parameters.background,(diffx,diffy),(0,0,World_parameters.screen_size.x-diffx,World_parameters.screen_size.y-diffy))
@@ -472,27 +485,13 @@ def drawall():
     for x in range(startx,endx):
         for y in range(starty,endy):
             for block in blocks[x][y]:
-                World_parameters.screen.blit(block.image[block.current_status][frame%len(block.image[block.current_status])],(block.rec.x+offsetx,block.rec.y+offsety))
+                World_parameters.screen.blit(block.animation[block.facing,block.status],(block.rec.x+offsetx,block.rec.y+offsety))
             for entity in entities[x][y]:
-                World_parameters.screen.blit(entity.image[World_parameters.directions[entity.facing_direction]][entity.current_status][frame%len(entity.image[World_parameters.directions[entity.facing_direction]][entity.current_status])],(entity.rec.x+offsetx,entity.rec.y+offsety))
+                World_parameters.screen.blit(entity.animation[entity.facing,entity.status],(entity.rec.x+offsetx,entity.rec.y+offsety))
 
 
 
 
-
-"""
-
-stuff to do 
-
-1)add colour id dict like {"red:(255,0,0)} all of them - done but test
-
-2)add prevpos and set vel to 0 if pos is same for 2 continous frame during collision - done but test
-
-
-
-
-
-"""
 
 
 
